@@ -1,0 +1,199 @@
+%% =============================================================================
+%% Hadoop Web Crawl Processing Pipeline — Architecture Diagram
+%% =============================================================================
+%% Description: Six-stage MapReduce pipeline for distributed text analytics
+%%              over WET (Web Extracted Text) data. Orchestrated by a single
+%%              Driver; each stage uses distinct Mapper and Reducer classes.
+%% Renders in: GitHub, VS Code (Mermaid), mermaid.live, MkDocs, etc.
+%% =============================================================================
+
+graph TB
+    %% -------------------------------------------------------------------------
+    %% ORCHESTRATION
+    %% -------------------------------------------------------------------------
+    DRIVER["<b>WebCrawlPipelineDriver</b><br/><br/>• Sequential job execution<br/>• Validates input/output paths<br/>• Deletes existing stage outputs before each job<br/>• Exits on first failure<br/>• ToolRunner.run for each of 6 jobs"]
+    style DRIVER fill:#37474F,stroke:#000000,stroke-width:3px,color:#FFFFFF
+
+    %% -------------------------------------------------------------------------
+    %% INPUT
+    %% -------------------------------------------------------------------------
+    INPUT["<b>WET Files Input</b><br/><br/>• Source: Common Crawl<br/>• Volume: ~20 GB total<br/>• Files: ~99 (data-* naming)<br/>• Size: 200–250 MB each compressed<br/>• Format: Plain text, WARC headers"]
+    style INPUT fill:#C62828,stroke:#000000,stroke-width:3px,color:#FFFFFF
+
+    HDFS_IN["<b>HDFS Input Path</b><br/><br/>/user/&lt;user&gt;/input/wet_files/<br/>• All files in directory processed<br/>• No recursive limit"]
+    style HDFS_IN fill:#00838F,stroke:#000000,stroke-width:2px,color:#FFFFFF
+
+    DRIVER --> INPUT
+    INPUT --> HDFS_IN
+
+    %% -------------------------------------------------------------------------
+    %% STAGE 1: Text Cleaning and Normalization (TextCleaningJob)
+    %% -------------------------------------------------------------------------
+    subgraph STAGE1["<b>Stage 1 — Text Cleaning and Normalization</b> (TextCleaningJob)"]
+        direction TB
+        M1["<b>CleaningMapper</b><br/><br/>• Skip WARC header lines<br/>• Remove URLs, emails, HTML entities<br/>• Lowercase; keep Unicode letters<br/>• Keep Unicode letters; replace rest with space<br/>• Min word length: 2<br/>• Emit: (word, empty)"]
+        style M1 fill:#80CBC4,stroke:#004D40,stroke-width:2px,color:#000000
+        S1["<b>Shuffle &amp; Sort</b><br/>Group by word"]
+        style S1 fill:#E57373,stroke:#000000,stroke-width:2px,color:#FFFFFF
+        R1["<b>CleaningReducer</b><br/><br/>• Deduplicate<br/>• Emit: (word, empty)"]
+        style R1 fill:#80CBC4,stroke:#004D40,stroke-width:2px,color:#000000
+        M1 --> S1 --> R1
+    end
+    style STAGE1 fill:#E0F2F1,stroke:#00695C,stroke-width:3px,color:#000000
+
+    HDFS_IN --> M1
+
+    OUT1["<b>HDFS: stage1_cleaned</b><br/>Format: word per line<br/>Est. size: ~8 GB"]
+    style OUT1 fill:#FFD54F,stroke:#000000,stroke-width:2px,color:#000000
+    R1 --> OUT1
+
+    %% -------------------------------------------------------------------------
+    %% PARALLEL BRANCHES: Stages 2, 3, 4 (all read from stage1_cleaned)
+    %% -------------------------------------------------------------------------
+    OUT1 --> IN2
+    OUT1 --> IN3
+    OUT1 --> IN4
+
+    %% -------------------------------------------------------------------------
+    %% STAGE 2: Word Count (WordCountJob)
+    %% -------------------------------------------------------------------------
+    subgraph STAGE2["<b>Stage 2 — Word Count Aggregation</b> (WordCountJob)"]
+        direction TB
+        IN2["Input: stage1_cleaned"]
+        style IN2 fill:#C8E6C9,stroke:#2E7D32,stroke-width:1px,color:#000000
+        M2["<b>WordCountMapper</b><br/>Emit: (word, 1)"]
+        style M2 fill:#81D4FA,stroke:#01579B,stroke-width:2px,color:#000000
+        C2["<b>WordCountCombiner</b><br/>Local sum; reduces I/O"]
+        style C2 fill:#1976D2,stroke:#000000,stroke-width:2px,color:#FFFFFF
+        S2["<b>Shuffle &amp; Sort</b><br/>Group by word"]
+        style S2 fill:#E57373,stroke:#000000,stroke-width:2px,color:#FFFFFF
+        R2["<b>WordCountReducer</b><br/>Emit: (word, total_count)"]
+        style R2 fill:#81D4FA,stroke:#01579B,stroke-width:2px,color:#000000
+        IN2 --> M2 --> C2 --> S2 --> R2
+    end
+    style STAGE2 fill:#E3F2FD,stroke:#1565C0,stroke-width:3px,color:#000000
+
+    OUT2["<b>HDFS: stage2_wordcount</b><br/>Format: word TAB count<br/>Est. size: ~500 MB"]
+    style OUT2 fill:#FFD54F,stroke:#000000,stroke-width:2px,color:#000000
+    R2 --> OUT2
+
+    %% -------------------------------------------------------------------------
+    %% STAGE 3: Word Length Statistics (WordLengthStatsJob)
+    %% -------------------------------------------------------------------------
+    subgraph STAGE3["<b>Stage 3 — Word Length Statistics</b> (WordLengthStatsJob)"]
+        direction TB
+        IN3["Input: stage1_cleaned"]
+        style IN3 fill:#C8E6C9,stroke:#2E7D32,stroke-width:1px,color:#000000
+        M3["<b>WordLengthMapper</b><br/>Emit: (length, 1)"]
+        style M3 fill:#FFCC80,stroke:#E65100,stroke-width:2px,color:#000000
+        C3["<b>WordLengthCombiner</b><br/>Local aggregation"]
+        style C3 fill:#EF6C00,stroke:#000000,stroke-width:2px,color:#FFFFFF
+        S3["<b>Shuffle &amp; Sort</b><br/>Group by length"]
+        style S3 fill:#E57373,stroke:#000000,stroke-width:2px,color:#FFFFFF
+        R3["<b>WordLengthReducer</b><br/>Emit: (length, count=X, avg=Y)"]
+        style R3 fill:#FFCC80,stroke:#E65100,stroke-width:2px,color:#000000
+        IN3 --> M3 --> C3 --> S3 --> R3
+    end
+    style STAGE3 fill:#FFF3E0,stroke:#E65100,stroke-width:3px,color:#000000
+
+    OUT3["<b>HDFS: stage3_wordlength</b><br/>Format: length TAB stats<br/>Est. size: ~10 KB"]
+    style OUT3 fill:#FFD54F,stroke:#000000,stroke-width:2px,color:#000000
+    R3 --> OUT3
+
+    %% -------------------------------------------------------------------------
+    %% STAGE 4: Alphabet Distribution (AlphabetDistributionJob)
+    %% -------------------------------------------------------------------------
+    subgraph STAGE4["<b>Stage 4 — Alphabet Distribution Analysis</b> (AlphabetDistributionJob)"]
+        direction TB
+        IN4["Input: stage1_cleaned"]
+        style IN4 fill:#C8E6C9,stroke:#2E7D32,stroke-width:1px,color:#000000
+        M4["<b>AlphabetMapper</b><br/>FIRST_x, CHAR_x; Emit: (key, 1)"]
+        style M4 fill:#CE93D8,stroke:#4A148C,stroke-width:2px,color:#000000
+        C4["<b>AlphabetCombiner</b><br/>Local sum"]
+        style C4 fill:#7B1FA2,stroke:#000000,stroke-width:2px,color:#FFFFFF
+        S4["<b>Shuffle &amp; Sort</b><br/>Group by letter type"]
+        style S4 fill:#E57373,stroke:#000000,stroke-width:2px,color:#FFFFFF
+        R4["<b>AlphabetReducer</b><br/>Emit: (letter_type, count); cleanup: TOTAL_CHARS"]
+        style R4 fill:#CE93D8,stroke:#4A148C,stroke-width:2px,color:#000000
+        IN4 --> M4 --> C4 --> S4 --> R4
+    end
+    style STAGE4 fill:#F3E5F5,stroke:#6A1B9A,stroke-width:3px,color:#000000
+
+    OUT4["<b>HDFS: stage4_alphabet</b><br/>Format: letter_type TAB count<br/>Est. size: ~5 KB"]
+    style OUT4 fill:#FFD54F,stroke:#000000,stroke-width:2px,color:#000000
+    R4 --> OUT4
+
+    %% -------------------------------------------------------------------------
+    %% STAGE 5: Top-N Words (TopNWordsJob) — single reducer
+    %% -------------------------------------------------------------------------
+    subgraph STAGE5["<b>Stage 5 — Top-N Frequent Words</b> (TopNWordsJob)"]
+        direction TB
+        M5["<b>TopNMapper</b><br/>Parse word TAB count; Emit: (count, word)"]
+        style M5 fill:#A5D6A7,stroke:#2E7D32,stroke-width:2px,color:#000000
+        S5["<b>Sort</b><br/>DescendingIntComparator<br/>Single reducer"]
+        style S5 fill:#E57373,stroke:#000000,stroke-width:2px,color:#FFFFFF
+        R5["<b>TopNReducer</b><br/>TreeMap; emit top 1000 (word, count)"]
+        style R5 fill:#A5D6A7,stroke:#2E7D32,stroke-width:2px,color:#000000
+        M5 --> S5 --> R5
+    end
+    style STAGE5 fill:#E8F5E9,stroke:#2E7D32,stroke-width:3px,color:#000000
+
+    OUT2 --> M5
+    OUT5["<b>HDFS: stage5_topn</b><br/>Format: word TAB count<br/>Est. size: ~50 KB"]
+    style OUT5 fill:#FFD54F,stroke:#000000,stroke-width:2px,color:#000000
+    R5 --> OUT5
+
+    %% -------------------------------------------------------------------------
+    %% STAGE 6: Final Analysis (FinalAnalysisJob) — multiple inputs
+    %% -------------------------------------------------------------------------
+    subgraph STAGE6["<b>Stage 6 — Final Filtered Ranking and Analytical Summary</b> (FinalAnalysisJob)"]
+        direction TB
+        MI["<b>MultipleInputs</b><br/>stage2_wordcount + stage5_topn"]
+        style MI fill:#FFB74D,stroke:#E65100,stroke-width:2px,color:#000000
+        MA["<b>WordCountDataMapper</b><br/>Filter stop words; Emit (word, COUNT:X)"]
+        style MA fill:#FF8A65,stroke:#BF360C,stroke-width:2px,color:#FFFFFF
+        MB["<b>TopNDataMapper</b><br/>Emit (word, TOPN:true)"]
+        style MB fill:#FF8A65,stroke:#BF360C,stroke-width:2px,color:#FFFFFF
+        S6["<b>Shuffle &amp; Sort</b><br/>Group by word"]
+        style S6 fill:#E57373,stroke:#000000,stroke-width:2px,color:#FFFFFF
+        R6["<b>FinalAnalysisReducer</b><br/>Join; filter count≥10 or topN; categories; summary"]
+        style R6 fill:#FF5722,stroke:#000000,stroke-width:2px,color:#FFFFFF
+        MI --> MA
+        MI --> MB
+        MA --> S6
+        MB --> S6
+        S6 --> R6
+    end
+    style STAGE6 fill:#FBE9E7,stroke:#BF360C,stroke-width:3px,color:#000000
+
+    OUT2 --> MI
+    OUT5 --> MI
+
+    OUT6["<b>HDFS: stage6_final</b><br/>Format: word TAB analytics<br/>Est. size: ~200 KB"]
+    style OUT6 fill:#FFD54F,stroke:#000000,stroke-width:2px,color:#000000
+    R6 --> OUT6
+
+    %% -------------------------------------------------------------------------
+    %% FINAL ARTIFACTS
+    %% -------------------------------------------------------------------------
+    FINAL["<b>Pipeline Outputs</b><br/><br/>• stage1_cleaned … stage6_final under output path<br/>• Summary: total_word_occurrences, unique_words, avg_frequency, most_common_length<br/>• Filtered rankings with category (SHORT/MEDIUM/LONG/VERY_LONG)"]
+    style FINAL fill:#43A047,stroke:#000000,stroke-width:3px,color:#FFFFFF
+    OUT6 --> FINAL
+
+    %% -------------------------------------------------------------------------
+    %% LEGEND
+    %% -------------------------------------------------------------------------
+    subgraph LEGEND["<b>Legend</b>"]
+        direction LR
+        L1["Mapper"]
+        style L1 fill:#81D4FA,stroke:#01579B,stroke-width:2px,color:#000000
+        L2["Combiner"]
+        style L2 fill:#1976D2,stroke:#000000,stroke-width:2px,color:#FFFFFF
+        L3["Reducer"]
+        style L3 fill:#A5D6A7,stroke:#2E7D32,stroke-width:2px,color:#000000
+        L4["HDFS Output"]
+        style L4 fill:#FFD54F,stroke:#000000,stroke-width:2px,color:#000000
+        L5["Shuffle/Sort"]
+        style L5 fill:#E57373,stroke:#000000,stroke-width:2px,color:#FFFFFF
+    end
+    style LEGEND fill:#FAFAFA,stroke:#9E9E9E,stroke-width:2px,color:#000000
