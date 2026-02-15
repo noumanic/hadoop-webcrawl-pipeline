@@ -73,8 +73,8 @@ public class TextCleaningJob extends Configured implements Tool {
             // Skip other common WARC/HTTP header-style lines (Key: value at start)
             if (trimmed.matches("^[A-Za-z][A-Za-z0-9_-]*:\\s.*")) {
                 int colon = trimmed.indexOf(':');
-                String key = trimmed.substring(0, colon).toLowerCase();
-                if (key.startsWith("warc") || key.equals("content-type") || key.equals("content-length")) {
+                String fieldName = trimmed.substring(0, colon).toLowerCase();
+                if (fieldName.startsWith("warc") || fieldName.equals("content-type") || fieldName.equals("content-length")) {
                     return;
                 }
             }
@@ -111,7 +111,8 @@ public class TextCleaningJob extends Configured implements Tool {
     }
     
     /**
-     * Reducer: Remove duplicates and output unique cleaned words
+     * Reducer: Pass through every word occurrence (no deduplication).
+     * Stage 2 (Word Count) needs one line per occurrence to compute correct frequencies.
      */
     public static class CleaningReducer extends Reducer<Text, Text, Text, Text> {
         
@@ -120,8 +121,9 @@ public class TextCleaningJob extends Configured implements Tool {
         @Override
         protected void reduce(Text key, Iterable<Text> values, Context context) 
                 throws IOException, InterruptedException {
-            // Simply output the word once (deduplication at this stage)
-            context.write(key, emptyValue);
+            for (Text ignored : values) {
+                context.write(key, emptyValue);
+            }
         }
     }
     
