@@ -1,0 +1,37 @@
+plugins {
+    id 'java'
+}
+
+group = 'hadoop-webcrawl-pipeline'
+version = '1.0'
+
+java {
+    sourceCompatibility = JavaVersion.VERSION_11
+    targetCompatibility = JavaVersion.VERSION_11
+}
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    implementation 'org.apache.hadoop:hadoop-common:3.3.6'
+    implementation 'org.apache.hadoop:hadoop-mapreduce-client-core:3.3.6'
+}
+
+sourceSets {
+    main {
+        java {
+            srcDirs 'src'
+        }
+    }
+}
+
+jar {
+    archiveBaseName = 'webcrawl-pipeline'
+    archiveVersion = ''
+}
+
+tasks.named('test') {
+    enabled = false
+}
