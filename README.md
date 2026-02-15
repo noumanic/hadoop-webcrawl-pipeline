@@ -17,11 +17,30 @@ The pipeline is orchestrated by **WebCrawlPipelineDriver**, which runs six MapRe
 
 **High-level flow:**
 
-```
-WET Files (~20 GB) → Stage 1 (Text Cleaning) → stage1_cleaned
-                         ├→ Stage 2 (Word Count)     → stage2_wordcount ─┬→ Stage 5 (Top-N) → stage5_topn ─┐
-                         ├→ Stage 3 (Word Length)    → stage3_wordlength  │                                    ├→ Stage 6 (Final Analysis) → stage6_final
-                         └→ Stage 4 (Alphabet)      → stage4_alphabet    └──────────────────────────────────┘
+```mermaid
+flowchart TB
+    WET["WET Files (~20 GB)"]
+    S1["Stage 1: Text Cleaning"]
+    CLEANED[(stage1_cleaned)]
+    S2["Stage 2: Word Count"]
+    S3["Stage 3: Word Length"]
+    S4["Stage 4: Alphabet"]
+    WC[(stage2_wordcount)]
+    WL[(stage3_wordlength)]
+    ALPHA[(stage4_alphabet)]
+    S5["Stage 5: Top-N"]
+    TOPN[(stage5_topn)]
+    S6["Stage 6: Final Analysis"]
+    FINAL[(stage6_final)]
+
+    WET --> S1 --> CLEANED
+    CLEANED --> S2 --> WC
+    CLEANED --> S3 --> WL
+    CLEANED --> S4 --> ALPHA
+    WC --> S5 --> TOPN
+    WC --> S6
+    TOPN --> S6
+    S6 --> FINAL
 ```
 
 **Detailed diagram:** A full Mermaid diagram (data flow, mapper/reducer names, HDFS paths, and legend) is in [docs/pipeline-architecture.mmd](docs/pipeline-architecture.mmd). Render it with [Mermaid Live](https://mermaid.live), VS Code (Mermaid extension), or any Mermaid-capable viewer.
