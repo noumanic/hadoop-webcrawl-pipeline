@@ -292,6 +292,19 @@ hadoop fs -get /user/$(whoami)/output ./results
 ls -lh results/
 ```
 
+**Downloaded results folder layout** (after `hadoop fs -get .../output ./results`):
+
+| Path | Description |
+|------|-------------|
+| `results/stage1_cleaned/` | One line per word occurrence (cleaned text). |
+| `results/stage2_wordcount/` | Word frequency: `word<TAB>count` (sorted by word). |
+| `results/stage3_wordlength/` | Word length statistics. |
+| `results/stage4_alphabet/` | First-letter and character distribution (e.g. `FIRST_a`, `CHAR_a`). |
+| `results/stage5_topn/` | Top 1000 words by frequency: `word<TAB>count`. |
+| `results/stage6_final/` | Analytical lines: `word<TAB>count=N, length=N, category=..., topN=true/false` plus a final `### SUMMARY_STATISTICS ###` line. |
+
+The `results/` directory is in `.gitignore`; re-download after each run to refresh local copies.
+
 ## Output Format Examples
 
 ### Stage 1 Output (Cleaned Text)
@@ -305,6 +318,7 @@ computing
 ```
 
 ### Stage 2 Output (Word Count)
+Tab-separated: `word` and `count`. Sorted by word; use `sort -t$'\t' -k2 -rn` to see highest counts first.
 ```
 the     15234
 and     12456
@@ -339,11 +353,13 @@ process     32109
 ```
 
 ### Stage 6 Output (Final Analysis)
+One line per word that is either in the top 1000 or has count ≥ 10 (stop words excluded). Format: `word<TAB>count=N, length=N, category=SHORT|MEDIUM|LONG|VERY_LONG, topN=true|false`. Last line is the summary.
 ```
-algorithm   count=1234, length=9, category=LONG, topN=true
-compute     count=2345, length=7, category=MEDIUM, topN=true
+aa          count=125180, length=2, category=SHORT, topN=false
+aaa         count=47532, length=3, category=SHORT, topN=false
+the         count=45231, length=3, category=SHORT, topN=true
 ...
-### SUMMARY_STATISTICS ###   total_word_occurrences=1234567, unique_words=45678, avg_frequency=27.04, most_common_length=7
+### SUMMARY_STATISTICS ###   total_word_occurrences=..., unique_words=..., avg_frequency=..., most_common_length=...
 ```
 
 ## Troubleshooting
